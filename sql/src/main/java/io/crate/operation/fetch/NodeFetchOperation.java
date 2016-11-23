@@ -40,7 +40,6 @@ import io.crate.metadata.TableIdent;
 import io.crate.operation.collect.stats.StatsTables;
 import io.crate.operation.reference.doc.lucene.LuceneCollectorExpression;
 import io.crate.operation.reference.doc.lucene.LuceneReferenceResolver;
-import org.elasticsearch.common.inject.Singleton;
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.threadpool.ThreadPool;
@@ -84,8 +83,7 @@ public class NodeFetchOperation {
                 streamers,
                 indexService.mapperService(),
                 fetchContext.searcher(readerId),
-                indexService.fieldData(),
-                readerId
+                indexService.fieldData()
             );
         }
     }

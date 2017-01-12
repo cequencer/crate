@@ -138,6 +138,9 @@ public class CrateSettings {
         }
     };
 
+    public static final StringSetting STATS_BREAKER_LOGS_LIMIT = new StringSetting(
+        "breaker_logs_limit", null, true, "5%", STATS);
+
     public static final NestedSetting CLUSTER = new NestedSetting() {
         @Override
         public String name() {
@@ -1448,6 +1451,8 @@ public class CrateSettings {
             new SettingsAppliers.BooleanSettingsApplier(CrateSettings.STATS_ENABLED))
         .put(CrateSettings.STATS_SERVICE_REFRESH_INTERVAL.settingName(),
             new SettingsAppliers.TimeSettingsApplier(CrateSettings.STATS_SERVICE_REFRESH_INTERVAL))
+        .put(CrateSettings.STATS_BREAKER_LOGS_LIMIT.settingName(),
+            new SettingsAppliers.MemoryValueSettingsApplier(CrateSettings.STATS_BREAKER_LOGS_LIMIT))
         .put(CrateSettings.CLUSTER.settingName(),
             new SettingsAppliers.ObjectSettingsApplier(CrateSettings.CLUSTER))
         .put(CrateSettings.GRACEFUL_STOP.settingName(),

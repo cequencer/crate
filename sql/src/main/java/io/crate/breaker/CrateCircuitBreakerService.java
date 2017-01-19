@@ -21,6 +21,7 @@
 
 package io.crate.breaker;
 
+import com.google.common.collect.ArrayListMultimap;
 import org.elasticsearch.common.breaker.CircuitBreaker;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.settings.Settings;
@@ -33,7 +34,7 @@ import org.elasticsearch.node.settings.NodeSettingsService;
 
 import java.util.Locale;
 
-public class CrateCircuitBreakerService extends CircuitBreakerService {
+public class CrateCircuitBreakerService extends CircuitBreakerService implements NodeSettingsService.Listener {
 
     public static final String QUERY = "query";
     public static final String QUERY_CIRCUIT_BREAKER_LIMIT_SETTING = "indices.breaker.query.limit";
@@ -61,6 +62,8 @@ public class CrateCircuitBreakerService extends CircuitBreakerService {
     private BreakerSettings queryBreakerSettings;
     private BreakerSettings jobsLogBreakerSettings;
     private BreakerSettings operationsLogBreakerSettings;
+
+    private final ArrayListMultimap<String, Listener> listeners = ArrayListMultimap.create();
 
     @Inject
     public CrateCircuitBreakerService(Settings settings,
@@ -99,7 +102,7 @@ public class CrateCircuitBreakerService extends CircuitBreakerService {
             CircuitBreaker.Type.parseValue(DEFAULT_CIRCUIT_BREAKER_TYPE));
         registerBreaker(operationsLogBreakerSettings);
 
-        nodeSettingsService.addListener(new ApplySettings());
+        nodeSettingsService.addListener(this);
     }
 
     @Override
@@ -127,64 +130,79 @@ public class CrateCircuitBreakerService extends CircuitBreakerService {
             limit, new ByteSizeValue(limit));
     }
 
-    public class ApplySettings implements NodeSettingsService.Listener {
+    /**
+     * Method implementations of NodeSettingsService.Listener
+     */
 
-        @Override
-        public void onRefreshSettings(Settings settings) {
-            // Query breaker settings
-            registerBreakerSettings(QUERY,
-                settings,
-                QUERY_CIRCUIT_BREAKER_LIMIT_SETTING,
-                DEFAULT_QUERY_CIRCUIT_BREAKER_LIMIT,
-                QUERY_CIRCUIT_BREAKER_OVERHEAD_SETTING,
-                DEFAULT_QUERY_CIRCUIT_BREAKER_OVERHEAD_CONSTANT,
-                CrateCircuitBreakerService.this.queryBreakerSettings);
+    @Override
+    public void onRefreshSettings(Settings settings) {
+        // Query breaker settings
+        registerBreakerSettings(QUERY,
+            settings,
+            QUERY_CIRCUIT_BREAKER_LIMIT_SETTING,
+            DEFAULT_QUERY_CIRCUIT_BREAKER_LIMIT,
+            QUERY_CIRCUIT_BREAKER_OVERHEAD_SETTING,
+            DEFAULT_QUERY_CIRCUIT_BREAKER_OVERHEAD_CONSTANT,
+            queryBreakerSettings);
 
-            // Jobs log breaker settings
-            registerBreakerSettings(JOBS_LOG,
-                settings,
-                JOBS_LOG_CIRCUIT_BREAKER_LIMIT_SETTING,
-                DEFAULT_JOBS_LOG_CIRCUIT_BREAKER_LIMIT,
-                JOBS_LOG_CIRCUIT_BREAKER_OVERHEAD_SETTING,
-                DEFAULT_LOG_CIRCUIT_BREAKER_OVERHEAD_CONSTANT,
-                CrateCircuitBreakerService.this.jobsLogBreakerSettings);
+        // Jobs log breaker settings
+        registerBreakerSettings(JOBS_LOG,
+            settings,
+            JOBS_LOG_CIRCUIT_BREAKER_LIMIT_SETTING,
+            DEFAULT_JOBS_LOG_CIRCUIT_BREAKER_LIMIT,
+            JOBS_LOG_CIRCUIT_BREAKER_OVERHEAD_SETTING,
+            DEFAULT_LOG_CIRCUIT_BREAKER_OVERHEAD_CONSTANT,
+            jobsLogBreakerSettings);
 
-            // Operations log breaker settings
-            registerBreakerSettings(OPERATIONS_LOG,
-                settings,
-                OPERATIONS_LOG_CIRCUIT_BREAKER_LIMIT_SETTING,
-                DEFAULT_OPERATIONS_LOG_CIRCUIT_BREAKER_LIMIT,
-                OPERATIONS_LOG_CIRCUIT_BREAKER_OVERHEAD_SETTING,
-                DEFAULT_LOG_CIRCUIT_BREAKER_OVERHEAD_CONSTANT,
-                CrateCircuitBreakerService.this.operationsLogBreakerSettings);
-        }
+        // Operations log breaker settings
+        registerBreakerSettings(OPERATIONS_LOG,
+            settings,
+            OPERATIONS_LOG_CIRCUIT_BREAKER_LIMIT_SETTING,
+            DEFAULT_OPERATIONS_LOG_CIRCUIT_BREAKER_LIMIT,
+            OPERATIONS_LOG_CIRCUIT_BREAKER_OVERHEAD_SETTING,
+            DEFAULT_LOG_CIRCUIT_BREAKER_OVERHEAD_CONSTANT,
+            operationsLogBreakerSettings);
+    }
 
-        private void registerBreakerSettings(String name,
-                                             Settings newSettings,
-                                             String limitSettingName,
-                                             String defaultLimit,
-                                             String overheadSettingName,
-                                             double defaultOverhead,
-                                             BreakerSettings oldBreakerSettings) {
-            long limit = newSettings.getAsMemory(
+    private void registerBreakerSettings(String name,
+                                         Settings newSettings,
+                                         String limitSettingName,
+                                         String defaultLimit,
+                                         String overheadSettingName,
+                                         double defaultOverhead,
+                                         BreakerSettings oldBreakerSettings) {
+        long settingsLimit = settings.getAsMemory(
                 limitSettingName,
-                CrateCircuitBreakerService.this.settings.getAsMemory(
-                    limitSettingName,
-                    defaultLimit
-                ).toString()).getBytes();
-            double overhead = newSettings.getAsDouble(
+                defaultLimit
+            ).bytes();
+        long limit = newSettings.getAsMemory(
+            limitSettingName,
+            String.format(Locale.ENGLISH, "%db", settingsLimit)).getBytes();
+        double overhead = newSettings.getAsDouble(
+            overheadSettingName,
+            settings.getAsDouble(
                 overheadSettingName,
-                CrateCircuitBreakerService.this.settings.getAsDouble(
-                    overheadSettingName,
-                    defaultOverhead
-                ));
-            if (limit != oldBreakerSettings.getLimit() || overhead != oldBreakerSettings.getOverhead()) {
-                BreakerSettings breakerSettings = new BreakerSettings(
-                    name, limit, overhead,
-                    oldBreakerSettings.getType());
-                registerBreaker(breakerSettings);
+                defaultOverhead
+            ));
+        if (limit != oldBreakerSettings.getLimit() || overhead != oldBreakerSettings.getOverhead()) {
+            oldBreakerSettings = new BreakerSettings(
+                name, limit, overhead,
+                oldBreakerSettings.getType());
+            registerBreaker(oldBreakerSettings);
+
+            for (Listener listener : listeners.get(name)) {
+                listener.onBreakerChange(getBreaker(name));
             }
         }
     }
 
+    public void addListener(String breakerName, CrateCircuitBreakerService.Listener listener) {
+        listeners.put(breakerName, listener);
+    }
+
+    public interface Listener {
+
+        void onBreakerChange(CircuitBreaker breaker);
+
+    }
 }

@@ -23,7 +23,10 @@
 package io.crate.operation.collect.stats;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.crate.breaker.*;
+import io.crate.breaker.CrateCircuitBreakerService;
+import io.crate.breaker.JobContextLogSizeEstimator;
+import io.crate.breaker.OperationContextLogSizeEstimator;
+import io.crate.breaker.SizeEstimator;
 import io.crate.core.collections.BlockingEvictingQueue;
 import io.crate.metadata.settings.CrateSettings;
 import io.crate.operation.reference.sys.job.ContextLog;
@@ -35,7 +38,6 @@ import org.elasticsearch.common.inject.Provider;
 import org.elasticsearch.common.inject.Singleton;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
-import org.elasticsearch.indices.breaker.CircuitBreakerService;
 import org.elasticsearch.node.settings.NodeSettingsService;
 import org.elasticsearch.threadpool.ThreadPool;
 
@@ -56,7 +58,7 @@ public class StatsTablesService extends AbstractLifecycleComponent<StatsTablesSe
 
     protected final NodeSettingsService.Listener listener = new NodeSettingListener();
     private final ScheduledExecutorService scheduler;
-    private final CircuitBreakerService breakerService;
+    private final CrateCircuitBreakerService breakerService;
 
     private StatsTables statsTables;
     LogSink<JobContextLog> jobsLogSink = NoopLogSink.instance();
@@ -122,6 +124,9 @@ public class StatsTablesService extends AbstractLifecycleComponent<StatsTablesSe
             setJobsLogSink(0, TimeValue.timeValueSeconds(0L));
             setOperationsLogSink(0, TimeValue.timeValueSeconds(0L));
         }
+
+        this.breakerService.addListener(CrateCircuitBreakerService.JOBS_LOG, breaker -> setJobsLogSink(lastJobsLogSize, lastJobsLogExpiration));
+        this.breakerService.addListener(CrateCircuitBreakerService.OPERATIONS_LOG, breaker -> setOperationsLogSink(lastOperationsLogSize, lastOperationsLogExpiration));
     }
 
     private void setJobsLogSink(int size, TimeValue expiration) {

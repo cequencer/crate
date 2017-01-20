@@ -5,6 +5,9 @@ Changes for Crate
 Unreleased
 ==========
 
+ - DEPRECATED: multicast discovery has been depreciated in this release, and will be
+   removed in the 1.1 release.
+
  - The array comparison no longer requires extra parentheses for subselects.
    Now it's possible to use `` = ANY (SELECT ...)`` instead of
    `` = ANY ((SELECT ...))``

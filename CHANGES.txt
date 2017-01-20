@@ -5,6 +5,9 @@ Changes for Crate
 Unreleased
 ==========
 
+ - Dynamically added string columns now have exactly the same characteristics
+   as string columns created via ``CREATE TABLE`` or ``ALTER TABLE ADD COLUMN``
+
  - The array comparison no longer requires extra parentheses for subselects.
    Now it's possible to use `` = ANY (SELECT ...)`` instead of
    `` = ANY ((SELECT ...))``
